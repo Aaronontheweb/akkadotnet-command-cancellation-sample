@@ -9,20 +9,24 @@ namespace CommandCancellationSample.Messages;
 public static class AggregateCommands
 {
     /// <summary>
-    /// Applies a domain command to the aggregate.
+    /// Applies a domain command to the aggregate. The command carries a signed
+    /// <paramref name="Amount"/> that the aggregate folds into its balance.
     /// <paramref name="Cancelled"/> is the index-based cancellation signal captured at
     /// the command boundary (Lever 1). It is NOT a live token inside the actor.
     /// </summary>
     public sealed record ApplyCommand(
         Guid CommandId,
         Guid AggregateId,
-        string Payload,
+        decimal Amount,
         bool Cancelled);
 
     /// <summary>Query-style command: is this command's state cancellable (i.e. not applied)?</summary>
     public sealed record CancelCommand(Guid CommandId);
 
-    /// <summary>Appends a compensating event that semantically retracts an applied command.</summary>
+    /// <summary>
+    /// Asks the aggregate to append a compensating event that reverses a previously
+    /// applied command (Lever 4).
+    /// </summary>
     public sealed record RetractCommand(Guid CommandId, Guid AggregateId);
 }
 
@@ -32,20 +36,25 @@ public static class AggregateCommands
 /// </summary>
 public static class AggregateEvents
 {
+    /// <summary>
+    /// A command was applied. <see cref="Amount"/> is the signed delta that the
+    /// aggregate folds into its balance.
+    /// </summary>
     public sealed record CommandApplied(
         Guid CommandId,
         Guid AggregateId,
-        string Payload,
+        decimal Amount,
         long SequenceNr);
 
     /// <summary>Records that a command was cancelled at the boundary (audit-only, not folded).</summary>
     public sealed record CommandCancelled(Guid CommandId, Guid AggregateId);
 
     /// <summary>
-    /// Compensating event (NOT a rollback). It is a second, separate write that the
-    /// state machine understands as "applied, then retracted".
+    /// Compensating event (NOT a rollback). It is a second, separate write that
+    /// reverses the <see cref="Amount"/> the command originally applied. It does NOT
+    /// delete the original <see cref="CommandApplied"/> event from the journal.
     /// </summary>
-    public sealed record CommandRetracted(Guid CommandId, Guid AggregateId);
+    public sealed record CommandRetracted(Guid CommandId, Guid AggregateId, decimal Amount);
 }
 
 /// <summary>
@@ -57,7 +66,8 @@ public static class AggregateQueries
 
     public sealed record StateSnapshot(
         Guid AggregateId,
-        IReadOnlySet<Guid> AppliedCommandIds,
+        decimal Balance,
+        IReadOnlyDictionary<Guid, decimal> AppliedAmounts,
         IReadOnlySet<Guid> RetractedCommandIds);
 }
 
@@ -67,12 +77,12 @@ public static class AggregateQueries
 public static class CommandAcks
 {
     /// <summary>Lever 2: the persisted event identifiers, so "did it happen?" becomes resolvable.</summary>
-    public sealed record CommandAppliedAck(Guid CommandId, long SequenceNr);
+    public sealed record CommandAppliedAck(Guid CommandId, decimal Amount, long SequenceNr);
 
     /// <summary>The command id was already applied (or retracted) - no double-persist (Lever 3).</summary>
     public sealed record AlreadyApplied(Guid CommandId);
 
-    public sealed record RetractedAck(Guid CommandId);
+    public sealed record RetractedAck(Guid CommandId, decimal Amount);
 
     public sealed record CancelAck(Guid CommandId, bool IsCancelled);
 }

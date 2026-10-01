@@ -10,7 +10,8 @@ namespace CommandCancellationSample;
 /// Event-sourced aggregate. Recover folds persisted events into <see cref="AggregateState"/>;
 /// each command is gated on the boundary before any write (Lever 1), deduped by command id
 /// (Lever 3), and returns the persisted sequence number on success (Lever 2). A retract
-/// appends a compensating <see cref="CommandRetracted"/> event (Lever 4) - never a rollback.
+/// appends a compensating <see cref="CommandRetracted"/> event that unwinds the amount the
+/// command applied (Lever 4) - never a rollback, always a new event.
 /// </summary>
 public sealed class AggregateActor : ReceivePersistentActor
 {
@@ -36,7 +37,7 @@ public sealed class AggregateActor : ReceivePersistentActor
 
         // Read-side query for the tests / host.
         Command<AggregateQueries.GetState>(q =>
-            Sender.Tell(new AggregateQueries.StateSnapshot(AggregateId, _state.AppliedCommandIds, _state.RetractedCommandIds)));
+            Sender.Tell(new AggregateQueries.StateSnapshot(AggregateId, _state.Balance, _state.AppliedAmounts, _state.RetractedCommandIds)));
     }
 
     private void Apply(ApplyCommand cmd)
@@ -60,11 +61,11 @@ public sealed class AggregateActor : ReceivePersistentActor
 
         // Lever 2: persist and return the sequence number (the event id) to the caller.
         var seqNr = LastSequenceNr + 1;
-        Persist(new AggregateEvents.CommandApplied(cmd.CommandId, AggregateId, cmd.Payload, seqNr),
+        Persist(new AggregateEvents.CommandApplied(cmd.CommandId, AggregateId, cmd.Amount, seqNr),
             applied =>
             {
                 _state = AggregateState.Fold(_state, applied);
-                Sender.Tell(new CommandAcks.CommandAppliedAck(applied.CommandId, applied.SequenceNr));
+                Sender.Tell(new CommandAcks.CommandAppliedAck(applied.CommandId, applied.Amount, applied.SequenceNr));
             });
     }
 
@@ -77,13 +78,14 @@ public sealed class AggregateActor : ReceivePersistentActor
             return;
         }
 
-        // Lever 4: append a compensating event. This is a separate write; it does NOT
-        // delete the original CommandApplied event from the journal.
-        Persist(new AggregateEvents.CommandRetracted(cmd.CommandId, AggregateId),
+        // Lever 4: append a compensating event that unwinds the amount the command applied.
+        // This is a separate write; it does NOT delete the original CommandApplied event.
+        var amount = _state.AppliedAmount(cmd.CommandId);
+        Persist(new AggregateEvents.CommandRetracted(cmd.CommandId, AggregateId, amount),
             retracted =>
             {
                 _state = AggregateState.Fold(_state, retracted);
-                Sender.Tell(new CommandAcks.RetractedAck(cmd.CommandId));
+                Sender.Tell(new CommandAcks.RetractedAck(cmd.CommandId, retracted.Amount));
             });
     }
 }

@@ -22,37 +22,56 @@ public sealed class AggregateState
 
     public Guid AggregateId { get; set; }
 
-    /// <summary>Command ids that have been applied (and not retracted).</summary>
-    public HashSet<Guid> AppliedCommandIds { get; private set; } = new();
+    /// <summary>
+    /// The aggregate's real domain state. Every <see cref="CommandApplied"/> folds its
+    /// signed <see cref="Messages.AggregateEvents.CommandApplied.Amount"/> into this
+    /// balance; a <see cref="CommandRetracted"/> folds the amount back out.
+    /// </summary>
+    public decimal Balance { get; private set; }
+
+    /// <summary>
+    /// Command ids that have been applied (and not retracted), mapped to the amount
+    /// each command contributed. A retract looks the amount up here to unwind it and
+    /// removes the entry.
+    /// </summary>
+    public Dictionary<Guid, decimal> AppliedAmounts { get; private set; } = new();
 
     /// <summary>Command ids that were applied and later retracted via a compensating event.</summary>
     public HashSet<Guid> RetractedCommandIds { get; private set; } = new();
 
-    public bool IsApplied(Guid commandId) => AppliedCommandIds.Contains(commandId);
+    public bool IsApplied(Guid commandId) => AppliedAmounts.ContainsKey(commandId);
 
     public bool IsRetracted(Guid commandId) => RetractedCommandIds.Contains(commandId);
 
+    /// <summary>The amount a previously applied command contributed, for compensation.</summary>
+    public decimal AppliedAmount(Guid commandId) => AppliedAmounts.GetValueOrDefault(commandId);
+
     /// <summary>
-    /// Pure fold: an applied command moves to <see cref="AppliedCommandIds"/>; a
-    /// retracting event moves it to <see cref="RetractedCommandIds"/>. Returns a NEW
-    /// state instance; never mutates the input.
+    /// Pure fold. An <see cref="CommandApplied"/> adds its amount to the balance and
+    /// records the command as applied; a <see cref="CommandRetracted"/> subtracts the
+    /// amount back out (returning the balance towards its pre-command value) and marks
+    /// the command as retracted. Returns a NEW state instance; never mutates the input.
     /// </summary>
     public static AggregateState Fold(AggregateState state, object evt)
     {
         var next = new AggregateState(state.AggregateId)
         {
-            AppliedCommandIds = new HashSet<Guid>(state.AppliedCommandIds),
+            Balance = state.Balance,
+            AppliedAmounts = new Dictionary<Guid, decimal>(state.AppliedAmounts),
             RetractedCommandIds = new HashSet<Guid>(state.RetractedCommandIds),
         };
 
         switch (evt)
         {
             case CommandApplied applied:
-                next.AppliedCommandIds.Add(applied.CommandId);
+                next.Balance += applied.Amount;
+                next.AppliedAmounts[applied.CommandId] = applied.Amount;
                 break;
 
             case CommandRetracted retracted:
-                next.AppliedCommandIds.Remove(retracted.CommandId);
+                // Compensating event: unwind the amount the command applied.
+                next.Balance -= retracted.Amount;
+                next.AppliedAmounts.Remove(retracted.CommandId);
                 next.RetractedCommandIds.Add(retracted.CommandId);
                 break;
         }

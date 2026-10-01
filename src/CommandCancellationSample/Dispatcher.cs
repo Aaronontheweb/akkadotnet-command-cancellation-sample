@@ -23,14 +23,15 @@ public sealed class Dispatcher
     }
 
     /// <summary>
-    /// Submit an <see cref="ApplyCommand"/>. Returns the <see cref="CommandAcks.CommandAppliedAck"/>
-    /// (with persisted sequence number) on success. The ask is bounded by <paramref name="token"/>.
+    /// Submit an <see cref="ApplyCommand"/> with a signed <paramref name="amount"/>. Returns
+    /// the <see cref="CommandAcks.CommandAppliedAck"/> (with persisted sequence number and
+    /// amount) on success. The ask is bounded by <paramref name="token"/>.
     /// </summary>
-    public async Task<object> ApplyAsync(Guid aggregateId, string payload, CancellationToken token)
+    public async Task<object> ApplyAsync(Guid aggregateId, decimal amount, CancellationToken token)
     {
         var commandId = Guid.NewGuid();
         // Lever 1: capture the cancel signal at the boundary - this is what the aggregate sees.
-        var cmd = new AggregateCommands.ApplyCommand(commandId, aggregateId, payload, token.IsCancellationRequested);
+        var cmd = new AggregateCommands.ApplyCommand(commandId, aggregateId, amount, token.IsCancellationRequested);
 
         // Lever 2: Ask resolves to the persisted event id. If cancellation fires mid-flight,
         // the Ask throws (OperationCanceledException) but the events may still have landed -

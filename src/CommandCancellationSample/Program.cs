@@ -33,13 +33,14 @@ Console.WriteLine("------------------------------------------------------");
 
 var dispatcher = new Dispatcher(router, TimeSpan.FromSeconds(10));
 var aggregateId = Guid.NewGuid();
+const decimal appliedAmount = 100m;
 
 // 1. Apply a command with an already-fired token -> rejected at the boundary (Lever 1).
 using var cancelled = new CancellationTokenSource();
 cancelled.Cancel();
 try
 {
-    await dispatcher.ApplyAsync(aggregateId, "rejected-because-cancelled", cancelled.Token);
+    await dispatcher.ApplyAsync(aggregateId, appliedAmount, cancelled.Token);
 }
 catch (Exception ex)
 {
@@ -47,19 +48,18 @@ catch (Exception ex)
 }
 
 // 2. Apply a valid command -> returns the persisted event sequence (Lever 2).
-var applied = await dispatcher.ApplyAsync(aggregateId, "apply-this-command", CancellationToken.None);
-Console.WriteLine($"[2] Command applied, ack = {applied}");
+var applied = await dispatcher.ApplyAsync(aggregateId, appliedAmount, CancellationToken.None);
+Console.WriteLine($"[2] Applied {appliedAmount} -> {applied}");
 
-// 3. Demonstrate idempotency (Lever 3): A separate dispatcher does NOT know the command
-// id (ApplyAsync mints a fresh one), so to show dedup we send the SAME ApplyCommand
-// message (same CommandId) directly to the router. The second send must return AlreadyApplied.
+// 3. Demonstrate idempotency (Lever 3): send the SAME ApplyCommand message (same CommandId)
+// to the router twice. The second send must return AlreadyApplied (no double-persist).
 var cmdId = Guid.NewGuid();
 var demoAggregateId = Guid.NewGuid();
 try
 {
-    var raw = await router.Ask<object>(new AggregateCommands.ApplyCommand(cmdId, demoAggregateId, "idempotent", Cancelled: false), TimeSpan.FromSeconds(10));
+    var raw = await router.Ask<object>(new AggregateCommands.ApplyCommand(cmdId, demoAggregateId, appliedAmount, Cancelled: false), TimeSpan.FromSeconds(10));
     Console.WriteLine($"[3] First send of {cmdId:N} -> {raw}");
-    var dup = await router.Ask<object>(new AggregateCommands.ApplyCommand(cmdId, demoAggregateId, "idempotent", Cancelled: false), TimeSpan.FromSeconds(10));
+    var dup = await router.Ask<object>(new AggregateCommands.ApplyCommand(cmdId, demoAggregateId, appliedAmount, Cancelled: false), TimeSpan.FromSeconds(10));
     Console.WriteLine($"[3] Re-send of {cmdId:N} -> {dup} (expected AlreadyApplied)");
 }
 catch (Exception ex)
@@ -67,11 +67,15 @@ catch (Exception ex)
     Console.WriteLine($"[3] Error during idempotency check: {ex.GetType().Name}");
 }
 
-// 4. Retract an applied command -> compensating event (Lever 4).
+// 4. Retract the applied command -> compensating event unwinds the amount (Lever 4).
 try
 {
+    var before = await router.Ask<object>(new AggregateQueries.GetState(demoAggregateId), TimeSpan.FromSeconds(10));
+    Console.WriteLine($"[4] Balance before retract: {before}");
     var retracted = await dispatcher.RetractAsync(demoAggregateId, cmdId, CancellationToken.None);
     Console.WriteLine($"[4] Retract -> {retracted}");
+    var after = await router.Ask<object>(new AggregateQueries.GetState(demoAggregateId), TimeSpan.FromSeconds(10));
+    Console.WriteLine($"[4] Balance after retract: {after} (compensating event unwound the amount)");
 }
 catch (Exception ex)
 {
