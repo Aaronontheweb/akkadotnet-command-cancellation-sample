@@ -14,7 +14,7 @@ analysis. It must not contain any customer PII or proprietary business details.
 
 ## Background / constraints (the "why")
 
-The customer (kept anonymous, anonymized) uses a command dispatcher that does
+The customer (kept anonymous) uses a command dispatcher that does
 `await router.Ask(command, cancellationToken)`, a router that `Forward`s the
 command to an event-sourced aggregate, and an aggregate that generates events and
 writes them via `PersistAll`.
