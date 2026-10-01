@@ -2,14 +2,26 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <!-- Nuget package versions -->
+    <AkkaVersion>1.5.71</AkkaVersion>
     <AkkaHostingVersion>1.5.71</AkkaHostingVersion>
+    <XunitV3Version>1.1.0</XunitV3Version>
+    <XunitRunnerVisualStudioVersion>3.1.5</XunitRunnerVisualStudioVersion>
+    <MicrosoftNetTestSdkVersion>17.14.1</MicrosoftNetTestSdkVersion>
   </PropertyGroup>
   <!-- App dependencies -->
   <ItemGroup>
     <PackageVersion Include="Akka.Hosting" Version="$(AkkaHostingVersion)"/>
+    <PackageVersion Include="Akka.Persistence" Version="$(AkkaVersion)"/>
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.11"/>
   </ItemGroup>
   <!-- Test dependencies -->
+  <ItemGroup>
+    <PackageVersion Include="Akka.Hosting.TestKit" Version="$(AkkaHostingVersion)"/>
+    <PackageVersion Include="Akka.Persistence.TestKit" Version="$(AkkaVersion)"/>
+    <PackageVersion Include="xunit.v3" Version="$(XunitV3Version)"/>
+    <PackageVersion Include="xunit.runner.visualstudio" Version="$(XunitRunnerVisualStudioVersion)"/>
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="$(MicrosoftNetTestSdkVersion)"/>
+  </ItemGroup>
   <!-- SourceLink support for all Akka.NET projects -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.400"/>
