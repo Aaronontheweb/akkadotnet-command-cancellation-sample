@@ -7,4 +7,5 @@
     <File Path="README.md" />
   </Folder>
   <Project Path="src/CommandCancellationSample/CommandCancellationSample.csproj" />
+  <Project Path="tests/CommandCancellationSample.Tests/CommandCancellationSample.Tests.csproj" />
 </Solution>
