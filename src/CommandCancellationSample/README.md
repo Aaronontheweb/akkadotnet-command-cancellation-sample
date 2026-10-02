@@ -1,25 +1,24 @@
-# Akka.NET Command Cancellation Sample
+# CommandCancellationSample
 
-A runnable, anonymized reproduction of a common support question: how to honor an
-HTTP request's `CancellationToken` inside an Akka.NET event-sourced aggregate when
-the command has already been handed to the actor for processing.
+A small Akka.NET console host that demonstrates how to handle per-request
+cancellation (`CancellationToken`) in an event-sourced aggregate whose command is
+already in flight.
 
-This repo is **scaffolded** from the
-[`akkadotnet/build-system-template`](https://github.com/akkadotnet/build-system-template)
-. The build system and the actor-shell project are in place; the actual
-cancellation / compensating-transaction design is intentionally **not yet filled in**.
+## What it shows
 
-## Intent
+The host starts an `ActorSystem` with an in-memory persistence journal and runs
+the four-lever flow from the repo root README:
 
-The scenario we are modeling (with all customer details removed):
+1. **Boundary gating** — a cancelled command is rejected before any event is written.
+2. **Persisted event identifiers** — the aggregate replies with the sequence number
+   of the events it wrote.
+3. **Idempotency** — re-sending the same command id returns "already applied"
+   instead of persisting twice.
+4. **Compensating events** — a `RetractCommand` appends a retraction event that
+   unwinds the aggregate's balance to its original value.
 
-1. An HTTP request arrives with a `CancellationToken` tied to that request.
-2. A command dispatcher validates the request, then forwards the command to a
-   router which routes it to an event-sourced aggregate actor.
-3. The aggregate processes the command, generates events, and persists them via
-   `PersistAll`.
-4. If the caller cancels the HTTP request, the token fires — but by then the
-   command may already be in flight in the aggregate.
+Run it with:
 
-This sample explores the options: best-effort boundary cancellation, a
-serializable `Cancel(commandId)` message, and a compensating-transaction shape.
+```bash
+dotnet run --project src/CommandCancellationSample
+```
